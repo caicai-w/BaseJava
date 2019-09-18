@@ -121,10 +121,12 @@ JDK1.7 及之后版本的 JVM 已经将运行时常量池从方法区中移了�
 
 **1.Serial收集器**
 Serial(串行)收集器单线程收集器，是stop-the-world，也就是必须暂停其他所有线程直到它收集结束。Serial在新生代采用复制，在老年代（Serial-Old）采用标记-整理。它是单线程没有线程交互的开销，所以单线程下的效率也还行，适合Client用。
+
 **2.ParNew收集器**
 其实它是Serial收集器的多线程版本，除了多线程外其余都一样，新生代采用复制，老年代采用标记-整理。它是许多运行在server模式下的虚拟机的首要选择。
 但是在单CPU环境下ParNew的表现绝对不会比Serial好，甚至因为线程切换的开销比Serial要差。除了Serial之外，只有它能与CMS（用在老年代）收集器配合工作。
 在这里并发是：多个垃圾回收线程一起工作，但用户线程处在等待状态。
+
 **3.Paraller Scavenge收集器**
 也是使用复制算法的多线程收集器，它看上去和ParNew差不多，差别在侧重点不同。Paraller Scavenge关注点是吞吐量，CMS关注用户线程的停顿时间（用户体验），所谓吞吐量就是cpu中用于运行用户代码的时间和总耗时占比。
 这两种的差别在于：关注吞吐量适合多计算任务的场景，停顿时间适合多交互场景。
@@ -132,11 +134,13 @@ Paraller Scavenge有两个参数用于精确控制吞吐量，分别是控制最
 它还有个参数-XX:UseAdaptiveSizePolicy,这是一个开关参数，打开这个开关之后，就不需要手动设置新生代的大小，Eden和Survivor区域的比例，晋升老年代对象大小等细节参数，开启自适应调节策略，jvm会替你做。
 它无法和CMS配合。
 新生代采用复制算法，来年代用标记整理。
+
 **4.Serial Old收集器**
 Serial收集器的老年代版本，它同样是一个单线程收集器，有两大用途：一个是在jdk1.5之前和Paraller Scavenge搭配使用，一种是作为CMS的后备方案。
 **5.Parallel Old收集器**
 Paraller Scavenge的老年代版本，使用多线程和标记-整理，在注重吞吐量和cpu资源的场合，都可以优先考虑Paraller Scavenge收集器和Parallel Old收集器。
 但是这个收集器是在1.6才有的，在它出现之前，Paraller Scavenge是处于比较尴尬的状态，因为如果选择了Paraller Scavenge回收新生代，由于CMS无法和Paraller Scavenge配合，老年代只能用Serial Old。
+
 **6.CMS收集器**
 CMS是非常注重用户体验，以获取最短回收停顿时间为目标的收集器。即便最短停顿时间是他它的目标，但这个最短也是相对于老年代来说的。
 第一次实现了让垃圾收集线程与用户线程同时工作。
@@ -246,7 +250,7 @@ java源文件先经过词法分析，词法分析是通过空格分隔出单词�
 4.当虚拟机启动时，用户需要定义一个要执行的主类 (包含 main 方法的那个类)，虚拟机会先初始化这个类。
 5.当使用 JDK1.7 的动态动态语言时，如果一个 MethodHandle 实例的最后解析结构为 REF_getStatic、REF_putStatic、REF_invokeStatic、的方法句柄，并且这个句柄没有初始化，则需要先触发器初始化。
 
-#### 4.、类加载器
+#### 4.类加载器
 
 JVM 中内置了三个重要的 ClassLoader，除了 BootstrapClassLoader 其他类加载器均由 Java 实现且全部继承自java.lang.ClassLoader：
 
@@ -254,7 +258,7 @@ JVM 中内置了三个重要的 ClassLoader，除了 BootstrapClassLoader 其他
 2.ExtensionClassLoader(扩展类加载器) ：主要负责加载目录 %JRE_HOME%/lib/ext 目录下的jar包和类，或被 java.ext.dirs 系统变量所指定的路径下的jar包。
 3.系统（System）类加载器：AppClassLoader(应用程序类加载器) :面向我们用户的加载器，负责加载当前应用classpath下的所有jar包和类。
 
-##### 加载类使用的都是双亲委派
+##### 4.1 加载类使用的都是双亲委派
 
 双亲委派机制描述：某个特定的类加载器在接到加载类的请求时，首先将加载任务委托给父类加载器，依次递归，如果父类加载器可以完成类加载任务，就成功返回；只有父类加载器无法完成此加载任务时，才自己去加载。
 
@@ -262,7 +266,7 @@ JVM 中内置了三个重要的 ClassLoader，除了 BootstrapClassLoader 其他
 1.Java虚拟机的第一个类加载器是Bootstrap，这个加载器很特殊，它不是Java类，因此它不需要被别人加载，它嵌套在Java虚拟机内核里面，也就是JVM启动的时候Bootstrap就已经启动，它是用C++写的二进制代码（不是字节码），它可以去加载别的类。
 这也是我们在测试时为什么发现System.class.getClassLoader()结果为null的原因，这并不表示System这个类没有类加载器，而是它的加载器比较特殊，是BootstrapClassLoader，由于它不是Java类，因此获得它的引用肯定返回null。
 
-##### 4.委托机制具体含义：
+##### 4.2 委托机制具体含义：
 
 当Java虚拟机要加载一个类时，到底派出哪个类加载器去加载呢？
 
@@ -271,11 +275,13 @@ JVM 中内置了三个重要的 ClassLoader，除了 BootstrapClassLoader 其他
 如果类A中引用了类B，Java虚拟机将使用加载类A的类加载器去加载类B。
 -还可以直接调用ClassLoader.loadClass()方法来指定某个类加载器去加载某个类。
 
-##### 5.使用原因，委托机制的意义：
+##### 4.3 使用原因，委托机制的意义：
 
 防止内存中出现多份同样的字节码，比如两个类A和类B都要加载System类：
 如果不用委托而是自己加载自己的，那么类A就会加载一份System字节码，然后类B又会加载一份System字节码，这样内存中就出现了两份System字节码。
 如果使用委托机制，会递归的向父类查找，也就是首选用Bootstrap尝试加载，如果找不到再向下。这里的System就能在Bootstrap中找到然后加载，如果此时类B也要加载System，也从Bootstrap开始，此时Bootstrap发现已经加载过了System那么直接返回内存中的System即可而不需要重新加载，这样内存中就只有一份System的字节码了。
+
+##### 4.4 如何打破双亲委派
 
 ## 七、Java内存模型和线程
 
