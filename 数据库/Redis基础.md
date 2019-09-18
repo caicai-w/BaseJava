@@ -46,12 +46,13 @@ hash
 #### 1.SDS字符串
 
 字符串的实现没有使用C语言的字符串，而是做了一些改进，叫做SDS，简单动态字符串，结构如下：
-
+```
 struct sdshdr{
   int len;           //表示buf已经使用的长度
   int free;        //buf未使用的长度
   char buf [ ]//字节数组
 };
+```
 len+free+1是分配的总长度。
 SDS和C字符串的比较：
 1.获取字符串长度：SDS 是 O(1)，C 字符串是 O(n)。
@@ -123,10 +124,15 @@ Reids在内存存储引擎的一大优点是提供 list 和 set 操作，Redis�
 
 2.内存淘汰机制
 1）noeviction：当内存不足以容纳新写入数据时，新写入操作会报错。
+
 2）allkeys-lru：当内存不足以容纳新写入数据时，在键空间中，移除最近最少使用的key（这个是最常用的）
-3）allkeys-random：当内存不足以容纳新写入数据时，在键空间中，随机移除某个key，这个一般没人用吧，为啥要随机，肯定是把最近最少使用的key给干掉啊
+
+3）allkeys-random：当内存不足以容纳新写入数据时，在键空间中，随机移除某个key.
+
 4）volatile-lru：当内存不足以容纳新写入数据时，在设置了过期时间的键空间中，移除最近最少使用的key（这个一般不太合适）
+
 5）volatile-random：当内存不足以容纳新写入数据时，在设置了过期时间的键空间中，随机移除某个key
+
 6）volatile-ttl：当内存不足以容纳新写入数据时，在设置了过期时间的键空间中,选择快要过期的.
 
 　注意这里的6种机制，volatile和allkeys规定了是对已设置过期时间的数据集淘汰数据还是从全部数据集淘汰数据，后面的lru、ttl以及random是三种不同的淘汰策略，再加上一种no-enviction永不回收的策略。
@@ -241,16 +247,20 @@ Redis 最简单的事务实现方式是使用 MULTI 和 EXEC 命令将事务操�
 　　　在Redis的事务中，WATCH命令可用于提供CAS(check-and-set)功能。假设我们通过WATCH命令在事务执行之前监控了多个Keys，倘若在WATCH之后有任何Key的值发生了变化，EXEC命令执行的事务都将被放弃，同时返回Null multi-bulk应答以通知调用者事务
 
 　执行失败。例如，我们再次假设Redis中并未提供incr命令来完成键值的原子性递增，如果要实现该功能，我们只能自行编写相应的代码。其伪码如下：
+ ```
 　　val = GET mykey
 　　val = val + 1
 　　SET mykey $val
+  ```
 　　以上代码只有在单连接的情况下才可以保证执行结果是正确的，因为如果在同一时刻有多个客户端在同时执行该段代码，那么就会出现多线程程序中经常出现的一种错误场景--竞态争用(race condition)。比如，客户端A和B都在同一时刻读取了mykey的原有值，假设该值为10，此后两个客户端又均将该值加一后set回Redis服务器，这样就会导致mykey的结果为11，而不是我们认为的12。为了解决类似的问题，我们需要借助WATCH命令的帮助，见如下代码：
+  ```
 　　WATCH mykey
 　　val = GET mykey
 　　val = val + 1
 　　MULTI
 　　SET mykey $val
 　　EXEC
+  ```
 　　和此前代码不同的是，新代码在获取mykey的值之前先通过WATCH命令监控了该键，此后又将set命令包围在事务中，这样就可以有效的保证每个连接在执行EXEC之前，如果当前连接获取的mykey的值被其它连接的客户端修改，那么当前连接的EXEC命令将执行失败。这样调用者在判断返回值后就可以获悉val是否被重新设置成功。
 
 
@@ -295,7 +305,7 @@ Redis 最简单的事务实现方式是使用 MULTI 和 EXEC 命令将事务操�
 
 　　bgsave的原理是什么？你给出两个词汇就可以了，fork和cow。fork是指redis通过创建子进程来进行bgsave操作，cow指的是copy on write，子进程创建后，父子进程共享数据段，父进程继续提供读写服务，写脏的页面数据会逐渐和子进程分离开来。
 
-19.Pipeline有什么好处，为什么要用pipeline？
+### 19.Pipeline有什么好处，为什么要用pipeline？
 
 　　可以将多次IO往返的时间缩减为一次，前提是pipeline执行的指令之间没有因果相关性。使用redis-benchmark进行压测的时候可以发现影响redis的QPS峰值的一个重要因素是pipeline批次指令的数目。
 
