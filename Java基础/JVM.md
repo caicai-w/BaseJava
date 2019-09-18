@@ -364,7 +364,7 @@ public String constractString(String s1,String s2,String s3){
 
 优化之后的synchronized锁分为下面几个状态：1.无锁，2.偏向锁，3.轻量级锁，4.重量级锁。不同的锁状态, 对象头中的MarkWord中存储的内容也不一样。
 
-![屏幕快照 2019-09-17 下午6.22.46](/Users/didi/Desktop/屏幕快照 2019-09-17 下午6.22.46.png)
+![](https://github.com/ikunzzt/BaseJava/blob/master/Java%E5%9F%BA%E7%A1%80/%E5%B1%8F%E5%B9%95%E5%BF%AB%E7%85%A7%202019-09-17%20%E4%B8%8B%E5%8D%886.22.46.png)
 
 #### 1.偏向锁
 
