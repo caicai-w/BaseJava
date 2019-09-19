@@ -285,12 +285,15 @@ select ... from table where a=xxx order by b；
 select ... from table where a=xxx and b =yyy order by c；
 但是
 select ... from table where a=xxx order by c不行，因为在a里面c不是排序的。
+
 **（2）.覆盖索引**
 就是从辅助索引就可以查到数据，就不需要再走聚簇索引了。而且还有一种 情况是比如有个表table。
 select count(*) from table。如果这个表有辅助索引是会通过辅助索引去做count的，因为辅助索引小，肯定IO少。
+
 **（3）.优化器选择不使用索引的情况**
 有时候在进行查询的时候，直接走B+索引，也就是全表的一个扫描，多发生的范围查询和join连接。
 比如用select * 对订单id进行某个范围的查询，如果走辅助索引还要去聚簇索引读取整行数据，这种情况就会直接使用聚簇索引。另外，索引查询优化器会帮我们做选择，但它去计算选择哪个索引更好的时候本身也会浪费时间，可以用use index强制走哪个索引。
+
 **（4）.MRR优化**
 Multi-range-read优化的目的就是减少磁盘的随机访问，把随机访问转换成较为顺序的访问，减少IO。
 对于range类型的查询，使用mrr的好处：
