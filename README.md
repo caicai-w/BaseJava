@@ -16,6 +16,7 @@
   * 操作系统
   
 # 数据库
+  * 写SQL语句
   * MySQL
   * Mongo
   * Redis
