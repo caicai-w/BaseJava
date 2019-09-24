@@ -164,6 +164,129 @@ G1的特点：
 
 ## 四.JVM参数
 
+JVM监控和故障处理工具
+
+#### 0.top
+
+看所有的进程，一般就看看谁cpu占比最高。
+
+#### 1. jps
+
+显示所有的虚拟机进程，和ps很类似，列出正在运行的jvm进程.
+
+#### 2.jconsole
+
+它可以说集成了jstack，jstact
+
+#### 3.jstat
+
+[参考](https://yq.aliyun.com/articles/62538?utm_campaign=wenzhang&utm_medium=article&utm_source=QQ-qun&utm_content=m_8315)
+
+主要看内存的，用于收集虚拟机各方面的运行数据,比如类装载、内存、垃圾回收、JIT编译等运行数据，是运行期定位虚拟机性能问题的首选。
+
+```shell
+jstat -gcutil 50863 
+  S0     S1     E      O      M     CCS    YGC     YGCT    FGC    FGCT     GCT
+  0.00   0.00  26.85  25.76  92.54  83.71     26    0.074     2    0.050    0.124
+#gcutil打出来的是百分比
+jstat -gcutil id
+#每250ms查询一次进程2764垃圾收集情况，一共查询20次
+jstat -gc 2764 250 20
+#打出来当前的一个数据
+jstat -gc pid
+#只查看new或者old区的信息
+jstat -gcnew id
+jstat -gcold id
+```
+
+#### 5.jstack
+
+[参考](https://mp.weixin.qq.com/s?__biz=MzAwODU3NTMzNg==&mid=2470484487&idx=1&sn=5269e02c6414d2f2f338442187f35c35&chksm=8dd8fa00baaf73164f73c18921206a9167734c91f0b9c201998c0d62ad58b131cf1919fa9a25#rd)
+
+它主要是看一个进程内的线程的信息,打出来都是内存信息，比如从java进程中找一个耗费cpu资源最高的线程并定位堆栈信息。如果有死锁的话，jstack -l pid可以看到死锁的信息。
+
+jstack命令生成的thread dump信息包含了JVM中所有存活的线程，为了分析指定线程，必须找出对应线程的调用栈，应该如何找？ 在top命令中，已经获取到了占用cpu资源较高的线程pid，将该pid转成16进制的值，在thread dump中每个线程都有一个nid，找到对应的nid即可。
+
+在dump中，线程一般存在如下几种状态： 1、RUNNABLE，线程处于执行中 2、BLOCKED，线程被阻塞 3、WAITING，线程正在等待 实例1：多线程竞争synchronized锁
+
+```shell
+#1.找出Java进程Id
+ps -ef | grep “进程名” | grep -v greproot
+#2.找出这个进程最耗费cpu的线程
+top -Hp pid //下面两个用哪个都行
+ps -mp pid -o THREAD,tid,time
+#3.得到cpu占比最高的线程，转换成16进制
+printf "%x\n" 21742  //结果54ee
+#4.输出这个进程的堆栈信息，它用来输出进程21711的堆栈信息，然后根据线程ID的十六进制值grep
+jstack 21711 | grep 54ee
+```
+
+写了个死锁的代码打出来的结果
+
+```shell
+"Thread-1" #11 prio=5 os_prio=31 tid=0x00007f90310cd000 nid=0x3d03 waiting for monitor entry [0x0000700010054000]
+   java.lang.Thread.State: BLOCKED (on object monitor)
+	at Sort.DeadLock.run(DeadLock.java:42)
+	- waiting to lock <0x00000007956a3f90> (a java.lang.Object)
+	- locked <0x00000007956a3fa0> (a java.lang.Object)
+	at java.lang.Thread.run(Thread.java:748)
+
+"Thread-0" #10 prio=5 os_prio=31 tid=0x00007f90310cc000 nid=0x3e03 waiting for monitor entry [0x000070000ff51000]
+   java.lang.Thread.State: BLOCKED (on object monitor)
+	at Sort.DeadLock.run(DeadLock.java:28)
+	- waiting to lock <0x00000007956a3fa0> (a java.lang.Object)
+	- locked <0x00000007956a3f90> (a java.lang.Object)
+	at java.lang.Thread.run(Thread.java:748)
+```
+
+加上-l关键字的话
+
+```shell
+Java stack information for the threads listed above:
+===================================================
+"Thread-1":
+	at Sort.DeadLock.run(DeadLock.java:42)
+	- waiting to lock <0x00000007956a3f90> (a java.lang.Object)
+	- locked <0x00000007956a3fa0> (a java.lang.Object)
+	at java.lang.Thread.run(Thread.java:748)
+"Thread-0":
+	at Sort.DeadLock.run(DeadLock.java:28)
+	- waiting to lock <0x00000007956a3fa0> (a java.lang.Object)
+	- locked <0x00000007956a3f90> (a java.lang.Object)
+	at java.lang.Thread.run(Thread.java:748)
+
+Found 1 deadlock.
+```
+
+
+
+#### 4. jamp
+
+查看堆的使用情况，像程序莫名其妙内存占用特别高的话，就可以去给他dump下来查看是什么类占内存高，是不是出出现死循环。它的作用不仅仅是为了获取dump文件，它还可以查询finalize队列，java堆和永久代的详细信息，如空间使用率，当前用的是什么收集器。
+
+```shell
+#常用
+jmap -dump ：file=a pid
+#查看进程堆内存使用情况，包括使用的GC算法，堆配置参数和各代中堆内存使用情况。
+jmap -heap pid
+
+```
+
+[常见问题定位方式](https://juejin.im/post/5ac442946fb9a028d700cfdf)
+
+#### 6.jinfo
+
+显示虚拟机的配置信息。
+
+```shell
+#显示 lvmid 的CMSInitiating的参数值
+jinfo -flag CMSInitiating.. lvmid
+```
+
+jhat：用于分析headdump文件，它会建立一个http/html服务器，让用户可以在浏览器查看日志分析结果。
+
+ps aux和ps -ef有什么区别？没太大区别，如果想看cpu占比，用aux。
+
 JVM参数类型：标配参数（version、help）、X参数、XX参数（重要）
 
 ##### 1.XX参数
@@ -364,7 +487,7 @@ public String constractString(String s1,String s2,String s3){
 
 优化之后的synchronized锁分为下面几个状态：1.无锁，2.偏向锁，3.轻量级锁，4.重量级锁。不同的锁状态, 对象头中的MarkWord中存储的内容也不一样。
 
-![](https://github.com/ikunzzt/BaseJava/blob/master/Java%E5%9F%BA%E7%A1%80/%E5%B1%8F%E5%B9%95%E5%BF%AB%E7%85%A7%202019-09-17%20%E4%B8%8B%E5%8D%886.22.46.png)
+[参考](https://github.com/ikunzzt/BaseJava/blob/master/Java%E5%9F%BA%E7%A1%80/%E5%B1%8F%E5%B9%95%E5%BF%AB%E7%85%A7%202019-09-17%20%E4%B8%8B%E5%8D%886.22.46.png)
 
 #### 1.偏向锁
 
