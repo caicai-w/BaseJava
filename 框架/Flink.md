@@ -6,24 +6,25 @@ Spark Streeaming：他其实是微批次处理，秒级别延迟，它相比较S
 
 Storm：延迟毫秒级，但是因为延迟低，所以吞吐量不高，不能保证精确一次性，大部分框架都只能保证至少一次，精确一次性是只有一次，消息不重复也不丢。所以Storm又出了一个Trident，是对storm的延伸，可以做到精确一次，但延迟方面付出了代价。 
 
-Flink：他做到了精确一次性，高吞吐，保持精确一次性。他有把数据放到内存的计算速度，数据也可以任意规模。
+Flink怎么做到既支持批处理也支持流处理？Flink在网络传输层有两种数据传输模式：
+
+pipelined模式：一条数据被处理完成以后，立即传输到下一个节点进行处理。
+
+batch模式：一条数据被处理完，并不会传到下一个节点，而是写到缓存区，缓存满了就刷到盘上，最后当所有数据都被处理完成后，才将数据传输到下一个节点进行处理。
+
+流处理和批处理对底层的具体算子的实现也是有各自的处理的，在具体功能上面会根据不同的特性区别处理。比如 批没有Checkpoint机制，流上不能做SortMergeJoin。Flink的延迟比Spark低，为什么Spark慢呢？他是一个微批次处理的概念，还是要等到数据攒够这一批才能出发，对于流式引擎来说，其实每一条数据达到都可以触发计算。Flink也是可以以一个集群的方式部署，一个master 可以管理多个salve，再给master做个高可用。
+
+他做到了精确一次性，高吞吐，保持精确一次性。他有把数据放到内存的计算速度，数据也可以任意规模。
 
 批处理的特点是有界、持久、大量，适合处理离线数据，Hadoop就是纯粹的批处理，而流式处理特点是无界、实时，不需要对整个数据集进行操作。storm是只能流处理，spark既可以批又可以流，但是它是不同的技术框架，分别实现的，Flink是不管批还是流都不区分，它把批处理当作特殊的流处理。
 
 ### 1.2流式的理解
 
-流式计算会根据收到的结果不断更新并且永远都不会完成。如果不要求在
-
-例子：
-通过追踪网站的三个访问者的活动，对于访问者来说，可能半小时内访问3次，也可能10分钟访问20次，活动是不连续的，在访问的时间段内，每次的访问数据都会被收集起来。
+流式计算会根据收到的结果不断更新并且永远都不会完成。
 
 发生故障后保持准确：
 若想使计算保持准确，要根据计算状态，如果计算框架本身不能做到，连续的流处理很难跟踪计算状态，因为计算过程没有终点，实际上，对状态的更新是持续进行的，
 Flink用的技术叫做检查点，checkpoint，在每个检查点，系统都会记录中间计算状态，从而在故障发生时准确的重置，这一方法使系统以低开销的方式拥有容错能力，当一切正常时，检查点机制对系统影响很小。
-
-Flink是怎么做到实时和容错的？
-
-乱序事件由Flink自行处理，此外，如果应用程序代码有过改动，只需要重播kafka主题，即可重播应用程序。
 
 ### 1.3Flink的架构
 
@@ -35,9 +36,100 @@ JobManager对应master，是个jvm进程，用于协调分布式执行，他们�
 
 TaskManager对应worker，用于执行一个dataflow的task、数据缓冲和data stream的交换，。
 
-### 1.4精确一次性是如何做的？
+### 1.4 容错机制
 
-使用检查点，在出现故障时将系统重置到正确状态。
+使用检查点，在出现故障时将系统重置到正确状态。就是发生故障了也不会影响正常数据的执行，计算结果的正确性取决于系统对每一条计算数据处理机制，一般有如下三种处理机制：
+
+- At Most Once：最多消费一次
+- At Least Once：最少消费一次。
+- Exactly Once：精确一次，无论何种情况，数据都只会消费一次，在金融支付，银行转帐等领域必须采用这种模式。
+
+Flink的容错机制会涉及到三个部分：外部数据源，Flink内部数据处理，外部输出。这不是。。
+
+目前Flink支持的两种数据容错机制：至少一次和精确一次。
+
+如何做到精确一次，下面分场景去考虑：
+
+![img](https://yqfile.alicdn.com/d1fe2e6faa9fa1f11a3970bb9c3a77262da34d99.png)
+
+场景一：Flink的source operator在读取到Kafka中pos=2000的时候，宕机了，这个时候Flink框架会分配一个新的节点继续读kafka数据，那么新的处理节点怎样处理才能保证数据处理且只被处理一次呢？
+
+场景二：Flink Data Flow内部某个节点，如果上图的agg()节点发生问题，在恢复之后怎样处理才能保持map()流出的数据处理且只被处理一次。
+
+场景三：Flink的Sink Operator在写入Kafka过程中自身节点出现问题，在恢复后如何处理保证结果只被写入一次？
+
+#### 系统内部容错
+
+Flink是利用检查点机制来实现至少一次和精确一次的容错处理模式，Flink检查点的内部实现会利用 Barriers，StateBackend等来将数据的处理进进行Marker，Flink会利用Barrier将整个流进行标记切分，比如：
+
+![image](https://yqfile.alicdn.com/276abfb0a013b2dbeb18386793d9cfc30968ab28.png)
+
+这样每个Flink的每个Operator都会记录当前成功处理的Checkpoint，如果发生错误，就会从上一个成功的checkpoint开始继续处理后续数据，比如source operator会将读取外部数据源的位置实时的记录到检查点，失败时候会从Checkpoint中读取成功的position继续精准的消费数据。每个算子会在Checkpoint中记录自己恢复时候必须的数据，比如流的原始数据和中间计算结果等信息，在恢复的时候从Checkpoint中读取并持续处理流数据。
+
+#### 外部Source容错
+
+Apache Flink 要做到 **End-to-End** 的 **Exactly Once** 需要外部Source的支持，比如上面我们说过 Apache Flink的Checkpointing机制会在Source节点记录读取的Position，那就需要外部数据提供读取的Position和支持根据Position进行数据读取。
+
+#### 外部Sink容错
+
+Apache Flink 要做到 **End-to-End** 的 **Exactly Once** 相对比较困难，如上场景三所述，当Sink Operator节点宕机，重新恢复时候根据Apache Flink 内部系统容错 **exactly once**的保证,系统会回滚到上次成功的Checkpoin继续写入，但是上次成功Checkpoint之后当前Checkpoint未完成之前已经把一部分新数据写入到kafka了. Apache Flink自上次成功的Checkpoint继续写入kafka，就造成了kafka再次接收到一份同样的来自Sink Operator的数据,进而破坏了**End-to-End** 的 **Exactly Once** 语义(重复写入就变成了**At Least Once**了)，如果要解决这一问题，Apache Flink 利用Two phase commit(两阶段提交)的方式来进行处理。本质上是Sink Operator 需要感知整体Checkpoint的完成，并在整体Checkpoint完成时候将计算结果写入Kafka。
+
+
+
+#### WaterMark
+
+上面说，如果用eventTime来设置waterMark，如果在TPS很高的场景下会产生大量的Watermark，在一定程度上对下游算子造成压力，所以只有在实时性要求非常高的场景才会选择Punctuated的方式进行Watermark的生成。
+
+多流的watermark处理
+
+在实际的流计算中往往一个job中会处理多个Source的数据，就比如我要对两个数据源进行一个join，那么来自不同源的数据携带各自的watermark，Flink怎么去保证这个watermark是单调递增的？当出现多流携带Eventtime汇聚到一起(GroupBy or Union)时候，Apache Flink会选择所有流入的Eventtime中最小的一个向下游流出。从而保证watermark的单调递增和保证数据的完整性。
+
+![image](https://yqfile.alicdn.com/a76d5956c3d6a13626c94f316bf32f6a143f0ffc.png)
+
+没有明白是什么意思。
+
+#### State
+
+State是指流计算过程中计算节点的中间计算结果或元数据属性，比如 在aggregation过程中要在state中记录中间聚合结果，流计算在 大多数场景下是增量计算，数据逐条处理（大多数场景)，每次计算是在上一次计算结果之上进行处理的，这样的机制势必要将上一次的计算结果进行存储（生产模式要持久化），另外由于机器，网络，脏数据等原因导致的程序错误，在重启job时候需要从成功的检查点(checkpoint，后面篇章会专门介绍)进行state的恢复。增量计算，Failover这些机制都需要state的支撑。
+
+Apache Flink内部有四种state的存储实现，具体如下：
+
+- 基于内存的HeapStateBackend - 在debug模式使用，不 建议在生产模式下应用；
+- 基于HDFS的FsStateBackend - 分布式文件持久化，每次读写都产生网络IO，整体性能不佳；
+- 基于RocksDB的RocksDBStateBackend - 本地文件+异步HDFS持久化；
+- 还有一个是基于Niagara(Alibaba内部实现)NiagaraStateBackend - 分布式持久化- 在Alibaba生产环境应用；
+
+#### State 持久化逻辑
+
+Apache Flink版本选择用RocksDB+HDFS的方式进行State的存储，State存储分两个阶段，首先本地存储到RocksDB，然后异步的同步到远程的HDFS。 这样而设计既消除了HeapStateBackend的局限（内存大小，机器坏掉丢失等），也减少了纯分布式存储的网络IO开销。
+
+#### State 分类
+
+Apache Flink 内部按照算子和数据分组角度将State划分为如下两类：
+
+- KeyedState - 这里面的key是我们在SQL语句中对应的GroupBy/PartitioneBy里面的字段，key的值就是groupby/PartitionBy字段组成的Row的字节数组，每一个key都有一个属于自己的State，key与key之间的State是不可见的；
+- OperatorState - Apache Flink内部的Source Connector的实现中就会用OperatorState来记录source数据读取的offset。 
+
+![image](https://yqfile.alicdn.com/6b1f9f3e29f8b868467adcff31198aa30813ea18.png)
+
+#### Join
+
+双流JOIN两边事件都会存储到State里面，如上，事件流按照标号先后流入到join节点，我们假设右边流比较快，先流入了3个事件，3个事件会存储到state中，但因为左边还没有数据，所有右边前3个事件流入时候，没有join结果流出，当左边第一个事件序号为4的流入时候，先存储左边state，再与右边已经流入的3个事件进行join，join的结果如图 三行结果会流入到下游节点sink。当第5号事件流入时候，也会和左边第4号事件进行join，流出一条jion结果到下游节点。这里关于INNER JOIN的语义和大家强调两点：
+
+- INNER JOIN只有符合JOIN条件时候才会有JOIN结果流出到下游，比如右边最先来的1，2，3个事件，流入时候没有任何输出，因为左边还没有可以JOIN的事件；
+- INNER JOIN两边的数据不论如何乱序，都能够保证和传统数据库语义一致，因为我们保存了左右两个流的所有事件到state中。
+
+#### LEFT OUTER JOIN 实现
+
+LEFT OUTER JOIN 可以简写 LEFT JOIN，语义上和INNER JOIN的区别是不论右流是否有JOIN的事件，左流的事件都需要流入下游节点，但右流没有可以JION的事件时候，右边的事件补NULL。
+
+#### 双流JOIN与传统数据库表JOIN的区别
+
+传统数据库表的JOIN是两张静态表的数据联接，在流上面是 动态表(关于流与动态表的关系请查阅 《Apache Flink 漫谈系列 - 流表对偶(duality)性)》，双流JOIN的数据不断流入与传统数据库表的JOIN有如下3个核心区别：
+
+- 左右两边的数据集合无穷 - 传统数据库左右两个表的数据集合是有限的，双流JOIN的数据会源源不断的流入；
+- JOIN的结果不断产生/更新 - 传统数据库表JOIN是一次执行产生最终结果后退出，双流JOIN会持续不断的产生新的结果。在 《Apache Flink 漫谈系列 - 持续查询(Continuous Queries)》篇也有相关介绍。
+- 查询计算的双边驱动 - 双流JOIN由于左右两边的流的速度不一样，会导致左边数据到来的时候右边数据还没有到来，或者右边数据到来的时候左边数据没有到来，所以在实现中要将左右两边的流数据进行保存，以保证JOIN的语义。在Blink中会以State的方式进行数据的存储。State相关请查看《Apache Flink 漫谈系列 - State》篇。
 
 # 2.时间概念
 
