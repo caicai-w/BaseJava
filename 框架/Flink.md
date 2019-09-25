@@ -52,6 +52,8 @@ Flink的容错机制会涉及到三个部分：外部数据源，Flink内部数�
 
 ![img](https://yqfile.alicdn.com/d1fe2e6faa9fa1f11a3970bb9c3a77262da34d99.png)
 
+![img](https://yqfile.alicdn.com/d1fe2e6faa9fa1f11a3970bb9c3a77262da34d99.png)
+
 场景一：Flink的source operator在读取到Kafka中pos=2000的时候，宕机了，这个时候Flink框架会分配一个新的节点继续读kafka数据，那么新的处理节点怎样处理才能保证数据处理且只被处理一次呢？
 
 场景二：Flink Data Flow内部某个节点，如果上图的agg()节点发生问题，在恢复之后怎样处理才能保持map()流出的数据处理且只被处理一次。
@@ -110,7 +112,7 @@ Apache Flink 内部按照算子和数据分组角度将State划分为如下两�
 - KeyedState - 这里面的key是我们在SQL语句中对应的GroupBy/PartitioneBy里面的字段，key的值就是groupby/PartitionBy字段组成的Row的字节数组，每一个key都有一个属于自己的State，key与key之间的State是不可见的；
 - OperatorState - Apache Flink内部的Source Connector的实现中就会用OperatorState来记录source数据读取的offset。 
 
-![image](https://yqfile.alicdn.com/6b1f9f3e29f8b868467adcff31198aa30813ea18.png)
+![state](https://yqfile.alicdn.com/6b1f9f3e29f8b868467adcff31198aa30813ea18.png)
 
 #### Join
 
