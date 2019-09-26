@@ -230,4 +230,16 @@ super关键字主要是子类访问父类的变量和方法。
 在构造器中使用 super（） 调用父类中的其他构造方法时，该语句必须处于构造器的首行，否则编译器会报错。另外，this 调用本类中的其他构造方法时，也要放在首行。
 this、super不能用在static方法中，因为 this和super是属于对象范畴的东西，而静态方法是属于类范畴的东西。
 
+#### 28.值传递
 
+```java
+public void mainTest(){
+    String str = "abc";
+    trans(str);
+    System.out.println(str);
+}
+public void trans(String str){
+    str = "xxx";
+}
+```
+结果还是abc，因为传递给trans的时候，是传递了一个字符串的引用，是copy了一个引用过去，copy过去的指向了常量池的另一个，原来的还是该指哪指哪里。
