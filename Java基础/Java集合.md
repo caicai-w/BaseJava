@@ -70,6 +70,24 @@
 
 Vector类里面的是同步方法，所以效率比较低。建议在不要求线程安全的时候就不要使用Vector
 
+### ArrayList线程不安全的例子
+
+[阅读](jianshu.com/p/cea11e25a817)
+
+1.多个线程同时执行add，可能出现的错误：
+
+java.util.ConcurrentModificationException，还有add的时候元素丢失，或者有的元素没有加成功是null。
+
+2.出现的原因
+
+如果多个线程同时对同一个ArrayList更改数据的话，会导致数据不一致或者数据污染。如果出现线程不安全的操作时，ArrayList会尽可能的抛出`ConcurrentModificationException`防止数据异常，当我们在对一个ArrayList进行遍历时，在遍历期间，我们是不能对ArrayList进行添加，修改，删除等更改数据的操作的，否则也会抛出`ConcurrentModificationException`异常，此为fail-fast（快速失败）机制。从源码上分析，我们在`add,remove,clear`等更改ArrayList数据时，都会导致modCount的改变，当`expectedModCount != modCount`时，则抛出`ConcurrentModificationException`。
+
+3.解决方案
+
+用vector，用collections.synchronizedList
+
+用CopyOnWriteArrayList，这个add()方法是lock住的，也就是只能有一个线程去add，每次add都是copy一个新的数组，长度比之前大1。相当于每次都扩容1.
+
 ### 说一说ArrayList的扩容机制吧
 
 先不说扩容，先说其他的吧，以一个无参数方法创建ArrayList时，是指向一个空数组，真正对数据进行添加元素操作时，才真正分配容量，也就是向数组添加第一个元素的时候，就直接扩容把数组容量变成10，下面就以无参数构造创建的ArrayList为例开始。
