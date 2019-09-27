@@ -1,6 +1,42 @@
 ## 1.阻塞队列
 
 当队列是空，从队列获取元素的操作被阻塞，当队列满，从队列放元素的操作被阻塞。
+BlockingQueue是他们的主要接口，主要说这几个阻塞队列：
+
+```java
+    public static void main(String[] args) throws InterruptedException{
+        /**
+         * 第一组
+         * add() remove()，如果add()超过容量就报错，remove也是。
+         */
+        BlockingQueue<String> queue = new ArrayBlockingQueue<>(3);
+        queue.add("123");
+        queue.remove("123");
+
+        /**
+         * 第二组
+         * offer(),poll(),如果超过容量或者不够，就offer返回false，poll返回null，比较友好
+         */
+
+        /**
+         * 第三组
+         * put(),如果容量不够，put不进来，就阻塞等着.
+         * take()会出队，然后put才能进来。
+         */
+        queue.put("123");
+        queue.put("234");
+        queue.put("873");
+        System.out.println("------------");
+        queue.take();
+        queue.put("0912");
+
+        /**
+         * 第四组
+         * offer(),下面这个offer就是如果时间超过我设置的，不等了不阻塞，直接放弃。
+         */
+        queue.offer("a",2L, TimeUnit.SECONDS);
+    }
+```
 
 ## 2.线程池
 
