@@ -96,7 +96,11 @@ ziplist类似于数组，ziplist在内存中是连续存储的，但是不同于
 
 SortedSet(zset)是Redis提供的一个非常特别的数据结构，一方面它等价于Java的数据结构Map<String, Double>，可以给每一个元素value赋予一个权重score，另一方面它又类似于TreeSet，内部的元素会按照权重score进行排序，可以得到每个元素的名次，还可以通过score的范围来获取元素的列表。zset底层实现使用了两个数据结构，第一个是hash，第二个是跳跃列表。hash的作用就是关联元素value和权重score，保障元素value的唯一性，可以通过元素value找到相应的score值，跳跃列表的目的在于给元素value排序，根据score的范围获取元素列表。
 
-首先要明白zset要实现什么样的功能，它要对set排序，当发生插入删除又要能做二分查找，能想到的就是树。
+跳表，是基于链表实现的一种类似“二分”的算法。它可以快速的实现增，删，改，查操作，我们要在该单链表中查找某个数据的时候需要的时间复杂度为O(n)，怎么提高查询效率呢？如果我们给该单链表加一级索引，将会改善查询效率。
+![](https://upload-images.jianshu.io/upload_images/7509658-1db5fac5ed4e8c6d.png?imageMogr2/auto-orient/strip|imageView2/2/format/webp)
+如果我们再加多几级索引的话，效率将会进一步提升。这种链表加多级索引的结构，就叫做跳表。跳表的查询时间复杂度可以达到O(logn)
+![](https://upload-images.jianshu.io/upload_images/7509658-b3caa2bc1e9db136.png?imageMogr2/auto-orient/strip|imageView2/2/format/webp)
+
 ![](https://user-gold-cdn.xitu.io/2018/7/23/164c5bb13c6da230?imageslim)
 跳跃列表采取一个随机策略来决定新元素可以兼职到第几层，首先L0层肯定是100%了，L1层只有50%的概率，L2层只有25%的概率，L3层只有12.5%的概率，一直随机到最顶层L31层。绝大多数元素都过不了几层，只有极少数元素可以深入到顶层。列表中的元素越多，能够深入的层次就越深，能进入到顶层的概率就会越大。
 
