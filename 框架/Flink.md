@@ -28,13 +28,13 @@ Flink用的技术叫做检查点，checkpoint，在每个检查点，系统都�
 
 ### 1.3Flink的架构
 
+![](http://img3.tbcdn.cn/5476e8b07b923/TB1ObBnJFXXXXXtXVXXXXXXXXXX)
+
+JobManager对应master，是个jvm进程，用于协调分布式执行，他们来调用task,TaskManager对应worker，一个worker就是一个进程，每个worker中有多个task slot就是多个线程并发的执行运算。
+
+图一
+
 Flink有个runTime的概念，它既可以是本地也可以是集群，DataStream API针对流处理，DataSet API针对批处理，你可以在一套程序里同时使用这两个。
-
-#### 1.3.1 JobManager 和 TaskManager
-
-JobManager对应master，是个jvm进程，用于协调分布式执行，他们来调用task。
-
-TaskManager对应worker，用于执行一个dataflow的task、数据缓冲和data stream的交换，。
 
 ### 1.4 容错机制
 
@@ -44,7 +44,7 @@ TaskManager对应worker，用于执行一个dataflow的task、数据缓冲和dat
 - At Least Once：最少消费一次。
 - Exactly Once：精确一次，无论何种情况，数据都只会消费一次，在金融支付，银行转帐等领域必须采用这种模式。
 
-Flink的容错机制会涉及到三个部分：外部数据源，Flink内部数据处理，外部输出。这不是。。
+Flink的容错机制会涉及到三个部分：外部数据源，Flink内部数据处理，外部输出。
 
 目前Flink支持的两种数据容错机制：至少一次和精确一次。
 
@@ -88,7 +88,6 @@ Apache Flink 要做到 **End-to-End** 的 **Exactly Once** 相对比较困难，
 
 ![image](https://yqfile.alicdn.com/a76d5956c3d6a13626c94f316bf32f6a143f0ffc.png)
 
-没有明白是什么意思。
 
 #### State
 
