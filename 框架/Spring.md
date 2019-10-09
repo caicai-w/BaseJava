@@ -1,15 +1,76 @@
 ## Spring系列
 
-### 1.一些重要的模块
+### 1.Spring中的aop例子。
+```java
+//自定义注解
+@Retention(RetentionPolicy.RUNTIME)
+@Target(ElementType.METHOD)
+public @interface MyAnno {
+}
 
-- **Spring Core：** 基础,可以说 Spring 其他所有的功能都需要依赖于该类库。主要提供 IoC 依赖注入功能。
-- **Spring Aspects** ： 该模块为与AspectJ的集成提供支持。
-- **Spring AOP** ：提供了面向切面的编程实现。
-- **Spring JDBC** : Java数据库连接。
-- **Spring JMS** ：Java消息服务。
-- **Spring ORM** : 用于支持Hibernate等ORM工具。
-- **Spring Web** : 为创建Web应用程序提供支持。
-- **Spring Test** : 提供了对 JUnit 和 TestNG 测试的支持。
+//要方法上加上刚定义的注解
+@Service
+public class MyProductService {
+    @MyAnno
+    public void test(){
+        System.out.println("调用test方法");
+    }
+}
+
+//动态代理类
+@Aspect
+@Component
+public class SecurityAspect {
+
+    @Autowired
+    AuthService authService;
+    
+    //拦截所有加@MyAnno注解的方法
+    @Pointcut("@annotation(com.imooc.anno.MyAnno)")
+    public void mathType(){}
+
+    //在加@MyAnno注解方法之前，做校验
+    @Before("mathType()")
+    public void before(){
+        authService.checkAccess();
+    }
+}
+
+//校验类
+@Service
+public class AuthService {
+    public void checkAccess(){
+       String user = CurrntUsersetHloder.get();
+       if (!"admin".equals(user)){
+           throw new RuntimeException("权限不足");
+       }
+       System.out.println("权限验证通过");
+       
+    }
+}
+
+//测试类
+@RunWith(SpringRunner.class)
+@SpringBootTest
+public class ExecutionDemoApplicationTests {
+
+	@Autowired
+	MyProductService productService1;
+
+	@Test
+	public void myTest(){
+		CurrntUsersetHloder.set("admin");
+		productService1.test();
+	}
+ }
+ 
+输出结果：
+权限验证通过
+调用test方法
+
+```
+
+
 
 ### 2.@RestController vs @Controller 不懂
 
