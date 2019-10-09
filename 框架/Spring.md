@@ -286,11 +286,11 @@ xml配置，<bean id="">
 
 ### 5. Bean的作用域
 
-单例（Singleton）：在Spring IOC容器中仅存在一个Bean实例，默认。
-原型（Prototype）：每次从容器中调用bean都返回一个新的实例。
-会话（Session）：同一个http session共享一个bean，不同session使用不同的bean，就是在Web应用中，为每个会话创建一个bean实例。
-请求（Request）：每次http请求都会创建新的bean，该bean只会在当前的HTTP request内有效，为每个请求创建一个bean实例。
-globalSession：一般用于Portlet应用环境，在基于 portlet 的 web 应用中才有意义。 默认情况下Spring中的bean都是单例的。
+单例（Singleton）：在Spring IOC容器中仅存在一个Bean实例，就是一个上下文一个，默认。    
+原型（Prototype）：每次从容器中调用bean都返回一个新的实例。  
+会话（Session）：同一个http session共享一个bean，不同session使用不同的bean，就是在Web应用中，为每个会话创建一个bean实例。   
+请求（Request）：每次http请求都会创建新的bean，该bean只会在当前的HTTP request内有效，为每个请求创建一个bean实例。   
+globalSession：一般用于Portlet应用环境，在基于 portlet 的 web 应用中才有意义。 默认情况下Spring中的bean都是单例的。   
 
 #### 5.1 Spring 中的单例 bean 的线程安全问题了解吗？
 
