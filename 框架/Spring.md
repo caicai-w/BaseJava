@@ -192,6 +192,10 @@ after in cglib
 静态代理参考装饰器模式。
 那么，spring是如何选择用哪种方式创建代理类的，如果目标对象实现了接口，默认用jdk，没有实现接口就用cglib，如果实现了接口也可以强制使用cglib。
 
+### 3.Spring中用aop做了什么？
+
+比如事务，事务是怎么实现的，就是给原本的类生成一个代理类，然后事务方法前后加了try catch，大概就这样。
+
 ### 2.@RestController vs @Controller 不懂
 
 Controller返回一个页面，单独使用@Controller不加@ResponseBody的话，一般使用在要返回一个视图的情况，这种就属于比较传统的Spring MVC的应用，对应于前后端不分离的情况。
@@ -200,9 +204,8 @@ Controller返回一个页面，单独使用@Controller不加@ResponseBody的话�
 
 但是RestController只返回对象，对象数据直接以JSON或XML形式写入HTTP Response，这也是最常用的前后端分离。
 
-### 3.Spring IOC & AOP
 
-#### 1.说说Spring IOC吧
+### 3.IOC
 
 IOC就是控制反转，让IOC容器负责对象的生命周期和对象之间的关系。底层用工厂+反射机制和配置文件来实现。 **IoC 容器实际上就是个Map（key，value）,Map 中存放的是各种对象。**
 
@@ -212,7 +215,7 @@ BeanFactory是生产Bean 的工厂，它负责生产和管理各个bean实例。
 
 有好处就有坏处：IOC也让生成对象的过程变得复杂，而且还需要很多的配置。
 
-#### 2.说说AOP
+### 2.说说AOP
 
 AOP面向切面编程，是一种编程范式，它采用横向抽取机制，他的作用是可以把核心业务逻辑和安全、事务、日志等这些非核心业务逻辑分离，让业务逻辑之间的关系更简洁。他的主要目的是在不修改原来代码的情况下，通过代理类实现增强。
 
@@ -386,12 +389,6 @@ Bean容器利用Java Reflection API创建一个Bean的实例。
     </property>
 </bean>
 ```
-
-
-
-
-
-
 
 ### 6.AOP的一些概念，如果没有问可以不说
 
