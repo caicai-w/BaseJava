@@ -69,8 +69,128 @@ public class ExecutionDemoApplicationTests {
 调用test方法
 
 ```
+### 2.JDK动态代理和Cglib动态代理
+以上的写法，最终生成的代理类，Spring是提供了两种，一种是jdk一种是cglib。Spring在选择的时候遵循以下：
 
+jdk代理：他只能对实现接口的类，对接口里面的方法做动态代理。  
+cglib代理：他是对继承做的代理，所以对于static和final的类就做不了cglib代理，也无法对private、static方法进行代理。  
+在这之前，再看一下jdk和cglib动态代理分别是怎么做的？
+JDK动态 
+```java
+//定义接口
+public interface Subject {
+    void request();
+    void hello();
+}
 
+//接口实现类
+public class RealSubject implements Subject{
+    @Override
+    public void request() {
+        System.out.println("real subject execute request");
+    }
+
+    @Override
+    public void hello() {
+        System.out.println("hello");
+    }
+}
+
+//代理类
+public class JdkProxySubject implements InvocationHandler{
+
+    private RealSubject realSubject;
+
+    public JdkProxySubject(RealSubject realSubject) {
+        this.realSubject = realSubject;
+    }
+
+    @Override
+    public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
+        System.out.println("before");
+        Object result = null;
+        try{
+            result = method.invoke(realSubject,args);
+        }catch (Exception e){
+            System.out.println("ex:"+e.getMessage());
+            throw e;
+        }finally {
+            System.out.println("after");
+        }
+        return result;
+    }
+}
+
+//测试类
+public class Client {
+    public static void main(String[] args){
+        System.getProperties().put("sun.misc.ProxyGenerator.saveGeneratedFiles", "true");
+        //要传入要代理的接口，和接口的代理类，去调用这个接口的任何一个方法，都会走代理
+        Subject subject = (Subject) Proxy.newProxyInstance(Client.class.getClassLoader(),new Class[]{Subject.class},new JdkProxySubject(new RealSubject()));
+        subject.request();
+    }
+}
+
+输出结果：
+before
+real subject execute request
+after
+```
+
+cglib动态 
+```java
+//需要被代理的类
+public class RealSubject {
+
+    public void request() {
+        System.out.println("real subject execute request");
+    }
+
+    public void hello() {
+        System.out.println("hello");
+    }
+}
+
+//代理类
+public class DemoMethodInterceptor implements MethodInterceptor{
+    @Override
+    public Object intercept(Object obj, Method method, Object[] args, MethodProxy proxy) throws Throwable {
+        System.out.println("before in cglib");
+        Object result = null;
+        try{
+            result = proxy.invokeSuper(obj, args);
+        }catch (Exception e){
+            System.out.println("get ex:"+e.getMessage());
+            throw e;
+        }finally {
+            System.out.println("after in cglib");
+        }
+        return result;
+    }
+}
+
+//测试类
+public class Client {
+
+    public static void main(String[] args){
+        Enhancer enhancer = new Enhancer();
+	//被代理的类
+        enhancer.setSuperclass(RealSubject.class);
+	//生成代理类
+        enhancer.setCallback(new DemoMethodInterceptor());
+        RealSubject subject = (RealSubject) enhancer.create();
+        subject.hello();
+    }
+}
+
+输出结果：
+before in cglib
+hello
+after in cglib
+
+```
+静态代理参考装饰器模式。
+那么，spring是如何选择用哪种方式创建代理类的，如果目标对象实现了接口，默认用jdk，没有实现接口就用cglib，如果实现了接口也可以强制使用cglib。
 
 ### 2.@RestController vs @Controller 不懂
 
