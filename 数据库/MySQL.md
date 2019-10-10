@@ -64,7 +64,7 @@ Innodb首先把redolog放在缓冲池，然后按照一定的频率刷到重做�
 
 ## 三、checkPoint
 
-checkPoint做的事情就是什么时候把脏页刷回磁盘，因为有了缓冲池的设计，比如你update或者delete一个操作，缓冲池中的页就是脏页，也就是比磁盘上要新，那么如何刷回磁盘。如果每一次有更新都刷盘开销太大，如果刷的不及时，万一宕机了，数据库不能恢复了也不行。
+checkPoint做的事情就是什么时候把脏页刷回磁盘，会将buffer中脏数据页和脏日志页都刷到磁盘，因为有了缓冲池的设计，比如你update或者delete一个操作，缓冲池中的页就是脏页，也就是比磁盘上要新，那么如何刷回磁盘。如果每一次有更新都刷盘开销太大，如果刷的不及时，万一宕机了，数据库不能恢复了也不行。
 事务数据库系统普遍采用Write Ahead Log 策略，当事务提交时：**先写重做日志，再修改页。**，当数据库宕机时，只需要对checkpoint后的重做日志进行恢复。
 
 那么checkPoint在什么时候产生？
@@ -74,27 +74,136 @@ InnoDB有两种checkPoint：
 sharp checkPoint：默认的工作方式，是在数据库关闭时把所有脏页刷到磁盘，但是数据库在运行的时候肯定不能这样。
 fuzzy checkPoint：
 1）Master Thread checkPoint，对master thread发生的checkPoint差不多以每1s或者每10s的速度从缓冲池的脏页列表中刷一定比例的页到磁盘。
-2）FLUSH_LRU_List：这个是为了保持有100个空闲页，不够了就从LRU后面摘掉一些，如果去掉的里面有脏页，就checkpoint。等等
+2）FLUSH_LRU_List：这个是为了保持有100个空闲页，不够了就从LRU后面摘掉一些，如果去掉的里面有脏页，就checkpoint。
+3）async/sync flush checkpoint：同步刷盘还是异步刷盘。例如还有非常多的脏页没刷到磁盘(非常多是多少，有比例控制)，这时候会选择同步刷到磁盘，但这很少出现；如果脏页不是很多，可以选择异步刷到磁盘，如果脏页很少，可以暂时不刷脏页到磁盘。   
+4）dirty page too much checkpoint：脏页太多时强制触发检查点，目的是为了保证缓存有足够的空闲空间。too much的比例由变量innodb_max_dirty_pages_pct 控制，MySQL 5.6默认的值为75，即当脏页占缓冲池的百分之75后，就强制刷一部分脏页到磁盘。
 
 ## 四、mysql日志
 
 现在只说说mysql 的日志redolog 和 binlog ，redolog 是独属于 innodb 的日志，binlog 则是属于 server 层的日志。
+常见的日志有：二进制日志（binlog）、通用查询日志（默认不开启）、慢查询日志、错误日志、事务日志（redolog）等。
 
-##### redolog是什么？
+### 1.二进制日志（binlog）
+用来记录操作MySQL数据库中的写入性操作（包括增删改，但不包括查询），操作语句以事件的形式进行保存，描述数据更改。
+
+二进制日志的主要作用有两个： 
+1. 复制，配置了主从复制的时候，主服务器会将其产生的二进制日志发送到slave端，slave端会利用这个二进制日志的信息在本地重做，实现主从同步。  
+2. 恢复，因为二进制日志包含了备份以后的所有更新，因此可以用于最大限度地恢复数据库。因此，建议二进制日志单独保存到一个磁盘上，以便磁盘损坏以后进行数据恢复。
+
+### 2.慢查询日志 
+慢查询日志记录的是查询较慢的SQL语句的日志，可用设置一个时间的阈值，查询超过这个阈值的查询语句，都会记录下来。
+
+### 3.事务日志（redolog和undolog）
+InnoDB引擎特有日志，使用事务日志，在修改表的数据时只需要修改其内存拷贝，再把修改日志记录到持久在硬盘上的事务日志中，不用每次都将修改的数据页刷到磁盘，事务日志采用追加的方式，因此写日志的操作是磁盘上一小块区域内的顺序I/O，所以事务日志写起来也挺快，内存中被修改的数据页在后台可以慢慢的刷回到磁盘。
+
+如果事务日志写到了磁盘，但数据本身还没有写回磁盘，此时系统崩溃，存储引擎在重启时能够自动恢复这部分修改的数据。
+
+#### 3.1 redolog是什么？
 
 redo log包括两部分：一是内存中的日志缓冲(redo log buffer)，该部分日志是易失性的；二是磁盘上的重做日志文件(redo log file)，该部分日志是持久的。
-在概念上，innodb通过force log at commit机制实现事务的持久性，即在事务提交的时候，必须先将该事务的所有事务日志写入到磁盘上的redo log file和undo log file中进行持久化。
-为了确保每次日志都能写入到事务日志文件中，在每次将log buffer中的日志写入日志文件的过程中都会调用一次操作系统的fsync操作(即fsync()系统调用)。因为MySQL是工作在用户空间的，MySQL的log buffer处于用户空间的内存中。要写入到磁盘上的log file中，中间还要经过操作系统内核空间的os buffer，调用fsync()的作用就是将os buffer中的日志刷到磁盘上的log file中。
-
+在概念上，innodb通过force log at commit机制实现事务的持久性，即在事务提交的时候，必须先将该事务的所有事务日志写入到磁盘上的redo log file和undo log file中进行持久化。 
+为了确保每次日志都能写入到事务日志文件中，在每次将log buffer中的日志写入日志文件的过程中都会调用一次操作系统的fsync操作(即fsync()系统调用)。因为MySQL是工作在用户空间的，MySQL的log buffer处于用户空间的内存中。要写入到磁盘上的log file中，中间还要经过操作系统内核空间的os buffer，调用fsync()的作用就是将os buffer中的日志刷到磁盘上的log file中。   
 redolog 是物理日志，记录的是某个表的数据做了哪些修改，redolog 是固定大小的，也就是说后面的日志会覆盖前面的日志。
 
-binlog 又称作归档日志，它记录了对 MySQL 数据库执行更改的所有操作，但是不包括 SELECT 和 SHOW 这类操作。binlog 是逻辑日志，记录的是某个表执行了哪些操作。binlog 是追加形式的写入日志，后面的日志不会被前面的覆盖。
+刷日志到磁盘有以下几种规则：  
+1.发出commit动作时。已经说明过，commit发出后是否刷日志由变量 innodb_flush_log_at_trx_commit 控制。  
+2.每秒刷一次。这个刷日志的频率由变量 innodb_flush_log_at_timeout 值决定，默认是1秒。要注意，这个刷日志频率和commit动作无关。  
+3.当log buffer中已经使用的内存超过一半时。  
+4.当有checkpoint时，checkpoint在一定程度上代表了刷到磁盘时日志所处的LSN位置。  
 
-###### 3.1 数据更新过程
+#### 3.2 数据更新过程
 
 我们执行一个更新操作是这样的：读取对应的数据到内存—>更新数据—>写 redolog 日志—> redolog 状态为 prepare —>写 binlog 日志—>提交事务—> redolog 状态为 commit ，数据正式写入日志文件。我们发现 redolog 的提交方式为“两段式提交”，这样做的目的是为了数据恢复的时候确保数据恢复的准确性，因为数据恢复是通过备份的 binlog 来完成的，所以要确保 redolog 要和 binlog 一致。
 前面说宕机有redolog，现在又说用binlog，到底用啥？
-那么，binlog和redolog有什么区别？
+
+#### 3.2 undolog是什么？
+undo log有两个作用：提供回滚和多个行版本控制(MVCC)。
+在数据修改的时候，不仅记录了redo，还记录了相对应的undo，如果因为某些原因导致事务失败或回滚了，可以借助该undo进行回滚。  
+undo log和redo log记录物理日志不一样，它是逻辑日志。可以认为当delete一条记录时，undo log中会记录一条对应的insert记录，反之亦然，当update一条记录时，它记录一条对应相反的update记录。   
+当执行rollback时，就可以从undo log中的逻辑记录读取到相应的内容并进行回滚。有时候应用到行版本控制的时候，也是通过undo log来实现的：当读取的某一行被其他事务锁定时，它可以从undo log中分析出该行记录以前的数据是什么，从而提供该行版本信息，让用户实现非锁定一致性读取。 undo log是采用段(segment)的方式来记录的，每个undo操作在记录的时候占用一个undo log segment。另外，undo log也会产生redo log，因为undo log也要实现持久性保护。
+
+#### 3.3 redolog和binlog区别？ 
+redo log不是二进制日志。虽然二进制日志中也记录了innodb表的很多操作，也能实现重做的功能，但是它们之间有很大区别。
+
+1.二进制日志是在存储引擎的上层产生的，不管是什么存储引擎，对数据库进行了修改都会产生二进制日志。而redo log是innodb层产生的，只记录该存储引擎中表的修改。并且二进制日志先于redo log被记录。  
+2.二进制日志记录操作的方法是逻辑性的语句。即便它是基于行格式的记录方式，其本质也还是逻辑的SQL设置，如该行记录的每列的值是多少。而redo log是在物理格式上的日志，它记录的是数据库中每个页的修改。  
+3.二进制日志只在每次事务提交的时候一次性写入缓存中的日志"文件"。而redo log在数据准备修改前写入缓存中的redo log中，然后才对缓存中的数据执行修改操作；而且保证在发出事务提交指令时，先向缓存中的redo log写入日志，写入完成后才执行提交动作。  
+4.因为二进制日志只在提交的时候一次性写入，所以二进制日志中的记录方式和提交顺序有关，且一次提交对应一次记录。而redo log中是记录的物理页的修改，redo log文件中同一个事务可能多次记录，最后一个提交的事务记录会覆盖所有未提交的事务记录。例如事务T1，可能在redo log中记录了 T1-1,T1- 2,T1-3，T1* 共4个操作，其中 T1* 表示最后提交时的日志记录，所以对应的数据页最终状态是 T1* 对应的操作结果。而且redo log是并发写入的，不同事务之间的不同版本的记录会穿插写入到redo log文件中，例如可能redo log的记录方式如下： T1-1,T1-2,T2-1,T2- 2,T2*,T1-3,T1* 。     
+5.事务日志记录的是物理页的情况，它具有幂等性，因此记录日志的方式极其简练。幂等性的意思是多次操作前后状态是一样的，例如新插入一行后又删除该行，前后状态没有变化。而二进制日志记录的是所有影响数据的操作，记录的内容较多。例如插入一行记录一次，删除该行又记录一次。   
+
+#### 3.4 LSN 
+LSN称为日志的逻辑序列号(log sequence number)，在innodb存储引擎中，lsn占用8个字节。LSN的值会随着日志的写入而逐渐增大。根据LSN，可以获取到几个有用的信息：
+1.数据页的版本信息。 
+2.写入的日志总量，通过LSN开始号码和结束号码可以计算出写入的日志量。  
+3.可知道检查点的位置。  
+实际上还可以获得很多隐式的信息。
+LSN不仅存在于redo log中，还存在于数据页中，在每个数据页的头部，有一个fil_page_lsn记录了当前页最终的LSN值是多少。通过数据页中的LSN值和redo log中的LSN值比较，如果页中的LSN值小于redo log中LSN值，则表示数据丢失了一部分，这时候可以通过redo log的记录来恢复到redo log中记录的LSN值时的状态。redo log的lsn信息可以通过 show engine innodb status 来查看。MySQL 5.5版本的show结果中只有3条记录，没有pages flushed up to。
+```
+mysql> show engine innodb stauts
+---
+LOG
+---
+Log sequence number 2225502463
+Log flushed up to   2225502463
+Pages flushed up to 2225502463
+Last checkpoint at  2225502463
+0 pending log writes, 0 pending chkp writes
+3201299 log i/o's done, 0.00 log i/o's/second
+```
+其中：
+
+log sequence number就是当前的redo log(in buffer)中的lsn； 
+log flushed up to是刷到redo log file on disk中的lsn； 
+pages flushed up to是已经刷到磁盘数据页上的LSN； 
+last checkpoint at是上一次检查点所在位置的LSN。 
+
+innodb从执行修改语句开始： 
+(1).首先修改内存中的数据页，并在数据页中记录LSN，暂且称之为data_in_buffer_lsn；  
+(2).并且在修改数据页的同时(几乎是同时)向redo log in buffer中写入redo log，并记录下对应的LSN，暂且称之为redo_log_in_buffer_lsn； 
+(3).写完buffer中的日志后，当触发了日志刷盘的几种规则时，会向redo log file on disk刷入重做日志，并在该文件中记下对应的LSN，暂且称之为redo_log_on_disk_lsn； 
+(4).数据页不可能永远只停留在内存中，在某些情况下，会触发checkpoint来将内存中的脏页(数据脏页和日志脏页)刷到磁盘，所以会在本次checkpoint脏页刷盘结束时，在redo log中记录checkpoint的LSN位置，暂且称之为checkpoint_lsn。 
+(5).要记录checkpoint所在位置很快，只需简单的设置一个标志即可，但是刷数据页并不一定很快，例如这一次checkpoint要刷入的数据页非常多。也就是说要刷入所有的数据页需要一定的时间来完成，中途刷入的每个数据页都会记下当前页所在的LSN，暂且称之为data_page_on_disk_lsn。 
+
+下面是一个刷盘的例子
+![](https://user-gold-cdn.xitu.io/2018/9/18/165eb7a355b45652?imageslim)
+上图中，从上到下的横线分别代表：时间轴、buffer中数据页中记录的LSN(data_in_buffer_lsn)、磁盘中数据页中记录的LSN(data_page_on_disk_lsn)、buffer中重做日志记录的LSN(redo_log_in_buffer_lsn)、磁盘中重做日志文件中记录的LSN(redo_log_on_disk_lsn)以及检查点记录的LSN(checkpoint_lsn)。
+
+假设在最初时(12:0:00)所有的日志页和数据页都完成了刷盘，也记录好了检查点的LSN，这时它们的LSN都是完全一致的。
+
+假设此时开启了一个事务，并立刻执行了一个update操作，执行完成后，buffer中的数据页和redo log都记录好了更新后的LSN值，假设为110。这时候如果执行 show engine innodb status 查看各LSN的值，即图中①处的位置状态，结果会是：
+
+log sequence number(110) > log flushed up to(100) = pages flushed up to = last checkpoint at
+之后又执行了一个delete语句，LSN增长到150。等到12:00:01时，触发redo log刷盘的规则(其中有一个规则是 innodb_flush_log_at_timeout 控制的默认日志刷盘频率为1秒)，这时redo log file on disk中的LSN会更新到和redo log in buffer的LSN一样，所以都等于150，这时  show engine innodb status ，即图中②的位置，结果将会是：
+
+log sequence number(150) = log flushed up to > pages flushed up to(100) = last checkpoint at
+再之后，执行了一个update语句，缓存中的LSN将增长到300，即图中③的位置。
+
+假设随后检查点出现，即图中④的位置，正如前面所说，检查点会触发数据页和日志页刷盘，但需要一定的时间来完成，所以在数据页刷盘还未完成时，检查点的LSN还是上一次检查点的LSN，但此时磁盘上数据页和日志页的LSN已经增长了，即：
+
+log sequence number > log flushed up to 和 pages flushed up to > last checkpoint at
+但是log flushed up to和pages flushed up to的大小无法确定，因为日志刷盘可能快于数据刷盘，也可能等于，还可能是慢于。但是checkpoint机制有保护数据刷盘速度是慢于日志刷盘的：当数据刷盘速度超过日志刷盘时，将会暂时停止数据刷盘，等待日志刷盘进度超过数据刷盘。
+
+等到数据页和日志页刷盘完毕，即到了位置⑤的时候，所有的LSN都等于300。
+
+随着时间的推移到了12:00:02，即图中位置⑥，又触发了日志刷盘的规则，但此时buffer中的日志LSN和磁盘中的日志LSN是一致的，所以不执行日志刷盘，即此时 show engine innodb status 时各种lsn都相等。
+
+随后执行了一个insert语句，假设buffer中的LSN增长到了800，即图中位置⑦。此时各种LSN的大小和位置①时一样。
+
+随后执行了提交动作，即位置⑧。默认情况下，提交动作会触发日志刷盘，但不会触发数据刷盘，所以 show engine innodb status 的结果是：
+
+log sequence number = log flushed up to > pages flushed up to = last checkpoint at
+最后随着时间的推移，检查点再次出现，即图中位置⑨。但是这次检查点不会触发日志刷盘，因为日志的LSN在检查点出现之前已经同步了。假设这次数据刷盘速度极快，快到一瞬间内完成而无法捕捉到状态的变化，这时 show engine innodb status 的结果将是各种LSN相等。
+
+#### 3.5 Innodb恢复行为
+在启动innodb的时候，不管上次是正常关闭还是异常关闭，总是会进行恢复操作。
+
+因为redo log记录的是数据页的物理变化，因此恢复的时候速度比逻辑日志(如二进制日志)要快很多。而且，innodb自身也做了一定程度的优化，让恢复速度变得更快。
+
+重启innodb时，checkpoint表示已经完整刷到磁盘上data page上的LSN，因此恢复时仅需要恢复从checkpoint开始的日志部分。例如，当数据库在上一次checkpoint的LSN为10000时宕机，且事务是已经提交过的状态。启动数据库时会检查磁盘中数据页的LSN，如果数据页的LSN小于日志中的LSN，则会从检查点开始恢复。
+
+还有一种情况，在宕机前正处于checkpoint的刷盘过程，且数据页的刷盘进度超过了日志页的刷盘进度。这时候一宕机，数据页中记录的LSN就会大于日志页中的LSN，在重启的恢复过程中会检查到这一情况，这时超出日志进度的部分将不会重做，因为这本身就表示已经做过的事情，无需再重做。
+
+另外，事务日志具有幂等性，所以多次操作得到同一结果的行为在日志中只记录一次。而二进制日志不具有幂等性，多次操作会全部记录下来，在恢复的时候会多次执行二进制日志中的记录，速度就慢得多。例如，某记录中id初始值为2，通过update将值设置为了3，后来又设置成了2，在事务日志中记录的将是无变化的页，根本无需恢复；而二进制会记录下两次update操作，恢复时也将执行这两次update操作，速度比事务日志恢复更慢。
 
 ## 五、Innodb关键特性
 
@@ -373,4 +482,4 @@ range来分，好处在于说，后面扩容的时候，就很容易，因为你
 3.雪花算法，一个long型的64bit，第一位不用，然后后面的41 bit作为毫秒数，他可以表示69年的时间，用10 bit作为工作机器id，工作机器可以分为机房和机器，12 bit作为序列号，就是1毫秒内第几个请求。
 
 
-
+https://juejin.im/entry/5ba0a254e51d450e735e4a1f
