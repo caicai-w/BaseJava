@@ -73,7 +73,7 @@ tryReleaseShared(int)//共享方式。尝试释放资源，成功则返回true�
 
 ### 3.ReentrantLock
 
-```
+```java
 ReentrantLock实现就两种：公平、非公平，两种实现都继承的Sync。
  public ReentrantLock() {
         sync = new NonfairSync();
@@ -86,7 +86,7 @@ ReentrantLock实现就两种：公平、非公平，两种实现都继承的Sync
 NonfairSync和FairSync都是继承的Sync，Sync继承的AQS，除了这些ReentrantLock就没啥东西了。
 先说Sync,下面是源码
 
-```
+```java
  abstract static class Sync extends AbstractQueuedSynchronizer {
         private static final long serialVersionUID = -5179523762034025860L;
 
